@@ -1,0 +1,1 @@
+"""Crawler GDELT 2.0: tải file 15 phút, lưu bronze trên S3, đẩy Events vào Kafka."""
