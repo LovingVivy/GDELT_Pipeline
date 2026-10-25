@@ -89,3 +89,24 @@ def replace_days_in_clickhouse(table: str, days: list, df: DataFrame) -> int:
     if rows:
         client.insert(table, rows, column_names=df.columns)
     return len(rows)
+
+def clickhouse_client():
+    import clickhouse_connect
+
+    return clickhouse_connect.get_client(
+        host=os.getenv("CLICKHOUSE_HOST", "clickhouse"),
+        port=int(os.getenv("CLICKHOUSE_PORT", "8123")),
+        username=os.getenv("CLICKHOUSE_USER", "gdelt"),
+        password=os.getenv("CLICKHOUSE_PASSWORD", ""),
+        database=os.getenv("CLICKHOUSE_DB", "gdelt"),
+    )
+
+
+def replace_run_in_clickhouse(table: str, run_id: str, df: DataFrame) -> int:
+    """Xoá kết quả cũ của run_id rồi chèn lại từ df. Chỉ dùng cho bảng nhỏ."""
+    client = clickhouse_client()
+    client.command(f"DELETE FROM {table} WHERE run_id = {{run_id:String}}", parameters={"run_id": run_id})
+    rows = [tuple(row) for row in df.collect()]
+    if rows:
+        client.insert(table, rows, column_names=df.columns)
+    return len(rows)

@@ -49,3 +49,14 @@ EVENT_SCHEMA = (
 )
 
 assert len(EVENT_SCHEMA) == 61, len(EVENT_SCHEMA)
+
+# 27 cột của GKG 2.1, theo GDELT-Global_Knowledge_Graph_Codebook-V2.1.pdf
+GKG_COLUMNS = [
+    "gkg_record_id", "date", "source_collection_id", "source_common_name", "document_identifier",
+    "counts", "v2_counts", "themes", "v2_themes", "locations", "v2_locations",
+    "persons", "v2_persons", "organizations", "v2_organizations", "v2_tone",
+    "dates", "gcam", "sharing_image", "related_images", "social_image_embeds", "social_video_embeds",
+    "quotations", "all_names", "amounts", "translation_info", "extras",
+]
+
+assert len(GKG_COLUMNS) == 27, len(GKG_COLUMNS)

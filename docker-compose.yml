@@ -151,6 +151,42 @@ services:
         condition: service_started
     restart: unless-stopped
 
+    
+  spark-batch:
+    image: gdelt-spark:latest
+    pull_policy: never
+    profiles: ["batch"] # Không tự chạy khi docker compose up
+    hostname: spark-batch
+    env_file:
+      - .env
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      CLICKHOUSE_HOST: clickhouse
+    volumes:
+      - ./processing/jobs:/opt/gdelt/jobs:ro
+      - ./processing/lookups:/opt/gdelt/lookups:ro
+    command:
+      - /opt/spark/bin/spark-submit
+      - --master
+      - spark://spark-master:7077
+      - --conf
+      - spark.driver.host=spark-batch
+      - --conf
+      - spark.cores.max=3
+      - --conf
+      - spark.executor.memory=2500m
+      - --conf
+      - spark.driver.memory=1g
+      - /opt/gdelt/jobs/gkg_weekly.py
+    depends_on:
+      clickhouse:
+        condition: service_healthy
+      spark-worker:
+        condition: service_started
+    restart: "no"
+
+
+
   kafka:
     image: apache/kafka:3.9.1
     ports:
