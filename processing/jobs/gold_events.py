@@ -10,12 +10,18 @@ from pyspark.sql import DataFrame, functions as F
 from common import build_spark, for_clickhouse, lake_path, write_clickhouse
 from reference import countries, event_roots
 
+from datetime import timedelta
+
+from bursts import detect as detect_bursts
+from common import build_spark, for_clickhouse, lake_path, replace_days_in_clickhouse, write_clickhouse
+
 CHECKPOINT_DIR = os.getenv("CHECKPOINT_DIR", "/opt/spark/checkpoints")
 TRIGGER = os.getenv("GOLD_TRIGGER", "1 minute")
 
 SILVER_EVENTS = lake_path("silver/gdelt/events")
 GOLD_FCT_EVENTS = lake_path("gold/fct_events")
 GOLD_AGG_EVENTS_15M = lake_path("gold/agg_events_15m")
+GOLD_BURSTS = lake_path("gold/bursts")
 
 
 def enrich(silver: DataFrame, countries_df: DataFrame, roots_df: DataFrame) -> DataFrame:
@@ -68,25 +74,31 @@ def main() -> None:
     roots_df = event_roots(spark)
 
     def publish(batch: DataFrame, batch_id: int) -> None:
-        days = [row.dt for row in batch.select("dt").distinct().collect()]
+        days = sorted(row.dt for row in batch.select("dt").distinct().collect())
         if not days:
             return
+        # Đột biến cần 24 giờ nền, nên đọc thêm ngày liền trước của mỗi ngày bị ảnh hưởng.
+        history_days = sorted(set(days) | {day - timedelta(days=1) for day in days})
 
-        silver = spark.read.parquet(SILVER_EVENTS).where(F.col("dt").isin(days))
-        fct = enrich(silver, countries_df, roots_df).persist()
+        silver = spark.read.parquet(SILVER_EVENTS).where(F.col("dt").isin(history_days))
+        history = enrich(silver, countries_df, roots_df).persist()
+        fct = history.where(F.col("dt").isin(days))
         agg = aggregate_15m(fct).persist()
+        bursts = detect_bursts(history, days).persist()
         try:
             # 1) S3 gold: nguồn chính thức
             fct.write.mode("overwrite").partitionBy("dt").parquet(GOLD_FCT_EVENTS)
             agg.write.mode("overwrite").partitionBy("dt").parquet(GOLD_AGG_EVENTS_15M)
+            bursts.write.mode("overwrite").partitionBy("dt").parquet(GOLD_BURSTS)
             # 2) ClickHouse: bản sao để truy vấn nhanh
             write_clickhouse(for_clickhouse(fct, keep_null=("lat", "lon")), "fct_events")
             write_clickhouse(for_clickhouse(agg), "agg_events_15m")
-            print(f"[gold] batch {batch_id}: ngày {sorted(map(str, days))}, "
-                  f"{fct.count()} sự kiện, {agg.count()} dòng tổng hợp", flush=True)
+            n_bursts = replace_days_in_clickhouse("gdelt.bursts", days, bursts)
+            print(f"[gold] batch {batch_id}: ngày {[str(d) for d in days]}, "
+                    f"{fct.count()} sự kiện, {agg.count()} dòng tổng hợp, {n_bursts} đột biến", flush=True)
         finally:
-            fct.unpersist()
-            agg.unpersist()
+            for df in (history, agg, bursts):
+                df.unpersist()
 
     # Đọc silver như một luồng chỉ để biết khi nào có file mới; dữ liệu thật đọc lại trong publish().
     silver_schema = spark.read.parquet(SILVER_EVENTS).schema

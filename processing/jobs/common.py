@@ -72,3 +72,20 @@ def write_clickhouse(df: DataFrame, table: str) -> None:
         .mode("append")
         .save()
     )
+
+def replace_days_in_clickhouse(table: str, days: list, df: DataFrame) -> int:
+    """Xoá các ngày `days` khỏi bảng rồi chèn lại từ df. Chỉ dùng cho bảng nhỏ: dữ liệu được gom về driver."""
+    import clickhouse_connect
+
+    client = clickhouse_connect.get_client(
+        host=os.getenv("CLICKHOUSE_HOST", "clickhouse"),
+        port=int(os.getenv("CLICKHOUSE_PORT", "8123")),
+        username=os.getenv("CLICKHOUSE_USER", "gdelt"),
+        password=os.getenv("CLICKHOUSE_PASSWORD", ""),
+        database=os.getenv("CLICKHOUSE_DB", "gdelt"),
+    )
+    client.command(f"DELETE FROM {table} WHERE dt IN {{days:Array(Date)}}", parameters={"days": days})
+    rows = [tuple(row) for row in df.collect()]
+    if rows:
+        client.insert(table, rows, column_names=df.columns)
+    return len(rows)
