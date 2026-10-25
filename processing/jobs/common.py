@@ -1,6 +1,7 @@
 """Phần dùng chung của các Spark job: tạo SparkSession có cấu hình S3."""
 import os
 
+from pyspark.sql import DataFrame, functions as F
 from pyspark.sql import SparkSession
 
 
@@ -37,3 +38,37 @@ def build_spark(app_name: str, **extra_conf) -> SparkSession:
     spark = builder.getOrCreate()
     spark.sparkContext.setLogLevel("WARN")
     return spark
+
+
+CLICKHOUSE_OPTIONS = {
+    "url": "jdbc:clickhouse://{}:{}/{}".format(
+        os.getenv("CLICKHOUSE_HOST", "clickhouse"),
+        os.getenv("CLICKHOUSE_PORT", "8123"),
+        os.getenv("CLICKHOUSE_DB", "gdelt"),
+    ),
+    "driver": "com.clickhouse.jdbc.ClickHouseDriver",
+    "user": os.getenv("CLICKHOUSE_USER", "gdelt"),
+    "password": os.getenv("CLICKHOUSE_PASSWORD", ""),
+}
+
+
+def for_clickhouse(df: DataFrame, keep_null: tuple = ()) -> DataFrame:
+    """ClickHouse không nhận null ở cột không khai báo Nullable: chuỗi thành '', số thành 0."""
+    strings = [f.name for f in df.schema.fields if f.dataType.simpleString() == "string"]
+    numbers = [
+        f.name for f in df.schema.fields
+        if f.dataType.simpleString() in ("int", "bigint", "double") and f.name not in keep_null
+    ]
+    return df.na.fill("", strings).na.fill(0, numbers).withColumn("updated_at", F.current_timestamp())
+
+
+def write_clickhouse(df: DataFrame, table: str) -> None:
+    (
+        df.write.format("jdbc")
+        .options(**CLICKHOUSE_OPTIONS)
+        .option("dbtable", table)
+        .option("batchsize", 20000)
+        .option("isolationLevel", "NONE")
+        .mode("append")
+        .save()
+    )

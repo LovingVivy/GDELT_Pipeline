@@ -1,4 +1,3 @@
-
 # Hạ tầng cục bộ của pipeline GDELT
 # Chạy: docker compose up -d
 
@@ -95,6 +94,63 @@ services:
         condition: service_started
     restart: unless-stopped
 
+  clickhouse:
+    image: clickhouse/clickhouse-server:24.8
+    environment:
+      CLICKHOUSE_DB: gdelt
+      CLICKHOUSE_USER: ${CLICKHOUSE_USER}
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD}
+    ports:
+      - "8123:8123"
+    ulimits:
+      nofile:
+        soft: 262144
+        hard: 262144
+    volumes:
+      - clickhouse-data:/var/lib/clickhouse
+      - ./serving/clickhouse/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:8123/ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    restart: unless-stopped
+
+  spark-gold:
+    image: gdelt-spark:latest
+    pull_policy: never
+    hostname: spark-gold
+    env_file:
+      - .env
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      CLICKHOUSE_HOST: clickhouse
+    volumes:
+      - ./processing/jobs:/opt/gdelt/jobs:ro
+      - ./processing/lookups:/opt/gdelt/lookups:ro
+      - spark-checkpoints:/opt/spark/checkpoints
+    command:
+      - /opt/spark/bin/spark-submit
+      - --master
+      - spark://spark-master:7077
+      - --conf
+      - spark.driver.host=spark-gold
+      - --conf
+      - spark.cores.max=1
+      - --conf
+      - spark.executor.memory=1g
+      - --conf
+      - spark.driver.memory=768m
+      - /opt/gdelt/jobs/gold_events.py
+    ports:
+      - "4042:4040"
+    depends_on:
+      clickhouse:
+        condition: service_healthy
+      spark-worker:
+        condition: service_started
+    restart: unless-stopped
+
   kafka:
     image: apache/kafka:3.9.1
     ports:
@@ -147,3 +203,4 @@ services:
 volumes:
   spark-checkpoints:
   kafka-data:
+  clickhouse-data:

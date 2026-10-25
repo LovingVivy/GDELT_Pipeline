@@ -15,6 +15,9 @@ ADD --chmod=644 \
     ${MAVEN}/com/amazonaws/aws-java-sdk-bundle/1.12.262/aws-java-sdk-bundle-1.12.262.jar \
     /opt/spark/jars/
 
+# Driver JDBC để Spark ghi vào ClickHouse. Dùng 0.6.4: bản "-all" của 0.6.5 bị đóng gói thiếu class.
+ADD --chmod=644 ${MAVEN}/com/clickhouse/clickhouse-jdbc/0.6.4/clickhouse-jdbc-0.6.4-all.jar /opt/spark/jars/
+
 RUN mkdir -p /opt/spark/checkpoints /opt/spark/work /opt/gdelt/jobs \
     && chown -R spark:spark /opt/spark/checkpoints /opt/spark/work /opt/gdelt
 
