@@ -1,0 +1,4 @@
+boto3==1.43.114
+confluent-kafka==2.16.0
+python-dotenv==1.2.4
+requests==2.34.2

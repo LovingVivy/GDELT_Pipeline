@@ -41,6 +41,9 @@ ENV PYTHONPATH=/opt/gdelt/jobs \
     PYTHONUNBUFFERED=1 \
     SPARK_WORKER_DIR=/opt/spark/work \
     TZ=UTC
+    
+COPY --chown=spark:spark jobs /opt/gdelt/jobs
+COPY --chown=spark:spark lookups /opt/gdelt/lookups
 
 USER spark
 WORKDIR /opt/gdelt/jobs
